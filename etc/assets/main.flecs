@@ -1,0 +1,57 @@
+using flecs.components.*
+using flecs.script.*
+
+const lane_width: 5
+const lane_length: 30
+const lane_height: 0.1
+const max_speed: 0.2
+
+const grid_x: 70
+const grid_y: 70
+const grid_spacing: (lane_length + lane_width * 2)
+const grid_road_offset: (lane_length / 2 + lane_width)
+
+with traffic.Road(length: lane_length, lane_width:$, max_speed:$) {
+    for x in 0..grid_x {
+        for y in 0..grid_y {
+            if x {
+                "road_lr_{x}_{y}" {
+                    Position3: {
+                        x * grid_spacing - grid_road_offset, 0, 
+                        y * grid_spacing
+                    }
+                }
+            }
+
+            if y {
+                "road_tb_{x}_{y}" {
+                    Position3: {
+                        x * grid_spacing, 0, 
+                        y * grid_spacing - grid_road_offset
+                    }
+
+                    Rotation3: {0, PI / 2, 0}
+                }
+            }
+        }
+    }
+}
+
+for x in 0..grid_x {
+    for y in 0..grid_y {
+        "intersection_{x}_{y}" {
+            traffic.Intersection: {
+                roads: [
+                    {lookup("road_tb_{x}_{y + 1}"), 0}
+                    {lookup("road_lr_{x + 1}_{y}"), 1}
+                    {lookup("road_tb_{x}_{y}"), 1}
+                    {lookup("road_lr_{x}_{y}"), 0}
+                ]
+                lane_width: lane_width
+                max_speed: max_speed
+            }
+
+            Position3: {x * grid_spacing, 0, y * grid_spacing}
+        }
+    }
+}

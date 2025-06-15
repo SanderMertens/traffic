@@ -1,0 +1,24 @@
+{
+    "id": "traffic",
+    "type": "application",
+    "value": {
+        "use": [
+            "flecs",
+            "flecs.components.transform",
+            "flecs.components.graphics",
+            "flecs.components.geometry",
+            "flecs.components.physics",
+            "flecs.components.gui",
+            "flecs.components.input",
+            "flecs.systems.transform",
+            "flecs.systems.physics",
+            "flecs.systems.sokol",
+            "flecs.game"
+        ],
+        "language": "c++",
+        "standalone": true
+    },
+    "lang.c": {
+        "defines": ["FLECS_SCRIPT_MATH"]
+    }
+}

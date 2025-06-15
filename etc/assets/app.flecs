@@ -1,0 +1,50 @@
+using flecs.components.*
+using flecs.game
+
+light {
+  Sun
+  Rotation3:{y: 0.5}
+}
+
+$ { 
+  TimeOfDay: {
+    t: 0.2
+    speed: 0.0
+  }
+}
+
+camera {
+  CameraController
+  Position3: {40, 30, -40}
+  Rotation3: {-0.32, 0, 0}
+  Camera: {
+    fov: 20
+    up: [0, 1, 0]
+    near_: 1
+    far_: 1500
+  }
+}
+
+canvas {
+  Atmosphere: {
+    night_color: {0.0001, 0.002, 0.004}
+  }
+
+  Canvas: {
+    title: "Flecs Traffic"
+    width: 1200
+    height: 900
+    background_color: {0.3, 0.6, 0.9}
+    ambient_light: {0.03, 0.06, 0.09}
+    directional_light: light
+    camera: camera
+    fog_density: 1.6
+    shadow_far: 300
+  }
+}
+
+ground_plane {
+  Position3: {0, -0.5, 0}
+  Box: {5000, 1.0, 5000}
+  Rgb: {0.11, 0.11, 0.11}
+}
