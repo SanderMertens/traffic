@@ -6,8 +6,8 @@ const lane_length: 30
 const lane_height: 0.1
 const max_speed: 0.2
 
-const grid_x: 70
-const grid_y: 70
+const grid_x: 3
+const grid_y: 3
 const grid_spacing: (lane_length + lane_width * 2)
 const grid_road_offset: (lane_length / 2 + lane_width)
 

@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
             //     continue;
             // }
 
-            flecs::entity car = world.entity()
+            flecs::entity car = world.entity().child_of<traffic::car_root>()
                 .set(traffic::Car{})
                 .set(Box{3, 1, 1})
                 .set(Emissive{0.8})

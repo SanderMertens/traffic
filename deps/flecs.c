@@ -28857,7 +28857,6 @@ ecs_entity_t ecs_set_rate(
     ecs_world_t *world,
     ecs_entity_t filter,
     int32_t rate,
-    int32_t tick_count,
     ecs_entity_t source)
 {
     ecs_check(world != NULL, ECS_INVALID_PARAMETER, NULL);
@@ -28868,8 +28867,7 @@ ecs_entity_t ecs_set_rate(
 
     ecs_set(world, filter, EcsRateFilter, {
         .rate = rate,
-        .src = source,
-        .tick_count = tick_count
+        .src = source
     });
 
     ecs_system_t *system_data = flecs_poly_get(world, filter, ecs_system_t);
@@ -69587,7 +69585,7 @@ int flecs_system_init_timer(
 
         if (desc->rate) {
             ecs_entity_t tick_source = desc->tick_source;
-            ecs_set_rate(world, entity, desc->rate, 0, tick_source);
+            ecs_set_rate(world, entity, desc->rate, tick_source);
         } else if (desc->tick_source) {
             ecs_set_tick_source(world, entity, desc->tick_source);
         }

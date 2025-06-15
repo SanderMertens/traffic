@@ -2,6 +2,9 @@
 #include <flecs.h>
 
 struct traffic {
+    struct car_root {};
+    struct road_root {};
+
     static constexpr int TrafficLightUpdateRate = 30;
     static constexpr int MaxCarsPerLane = 8;
     static constexpr float AccelerationForce = 1.5;

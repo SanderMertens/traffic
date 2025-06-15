@@ -12401,7 +12401,6 @@ ecs_entity_t ecs_set_rate(
     ecs_world_t *world,
     ecs_entity_t tick_source,
     int32_t rate,
-    int32_t tick_count,
     ecs_entity_t source);
 
 /** Assign tick source to system.
@@ -33343,8 +33342,8 @@ struct timer final : entity {
         return ecs_get_timeout(world_, id_);
     }
 
-    timer& rate(int32_t rate, int32_t tick_count = 0, flecs::entity_t tick_source = 0) {
-        ecs_set_rate(world_, id_, rate, tick_count, tick_source);
+    timer& rate(int32_t rate, flecs::entity_t tick_source = 0) {
+        ecs_set_rate(world_, id_, rate, tick_source);
         return *this;
     }
 
@@ -33388,7 +33387,7 @@ inline ecs_ftime_t system::timeout() {
 }
 
 inline void system::rate(int32_t rate) {
-    ecs_set_rate(world_, id_, rate, 0, 0);
+    ecs_set_rate(world_, id_, rate, 0);
 }
 
 inline void system::start() {
