@@ -1,5 +1,5 @@
 # Flecs Traffic
-Traffic simulation written in Flecs. Work in progress!
+Traffic simulation written in Flecs ([live wasm demo](https://flecs-hub.github.io/traffic/etc/)). Work in progress!
 
 ## How to run
 Use the following commands to run the demo:
