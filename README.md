@@ -33,4 +33,6 @@ cd traffic
 bake run --cfg release
 ```
 
+To increase/decrease the size of the grid, modify this file: https://github.com/flecs-hub/traffic/blob/main/etc/assets/main.flecs
+
 Have fun!
