@@ -1,5 +1,6 @@
 using flecs.components.*
 using flecs.script.*
+using traffic.*
 
 const lane_width: 5
 const lane_length: 30
@@ -10,7 +11,7 @@ const grid_y: 5
 const grid_spacing: (lane_length + lane_width * 2)
 const grid_road_offset: (lane_length / 2 + lane_width)
 
-with traffic.Road(length: lane_length, lane_width:$, max_speed:$) {
+with Road(length: lane_length, lane_width:$, max_speed:$) {
     for x in 0..grid_x {
         for y in 0..grid_y {
             if x {
@@ -39,7 +40,7 @@ with traffic.Road(length: lane_length, lane_width:$, max_speed:$) {
 for x in 0..grid_x {
     for y in 0..grid_y {
         "intersection_{x}_{y}" {
-            traffic.Intersection: {
+            Intersection: {
                 roads: [
                     {#0.lookup("road_tb_{x}_{y + 1}"), 0}
                     {#0.lookup("road_lr_{x + 1}_{y}"), 1}

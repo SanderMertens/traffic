@@ -7,6 +7,8 @@ using Scale = flecs::components::transform::Scale3;
 using Transform = flecs::components::transform::Transform3;
 using Color = flecs::components::graphics::Color;
 
+namespace traffic {
+
 float minDistanceForSpeed(float s1) {
     if (s1 < 0.1) {
         s1 = 0.1;
@@ -17,33 +19,37 @@ float minDistanceForSpeed(float s1) {
     return r;
 }
 
-const char* carStateStr(traffic::Car::State state) {
+const char* carStateStr(Car::State state) {
     switch(state) {
-    case traffic::Car::State::Unknown: return "Unknown";
-    case traffic::Car::State::Accelerating: return "Accelerating";
-    case traffic::Car::State::Driving: return "Driving";
-    case traffic::Car::State::Breaking: return "Breaking";
-    case traffic::Car::State::BreakingHard: return "BreakingHard";
-    case traffic::Car::State::Stopped: return "Stopped";
-    case traffic::Car::State::Crashed: return "Crashed";
+    case Car::State::Unknown: return "Unknown";
+    case Car::State::Accelerating: return "Accelerating";
+    case Car::State::Driving: return "Driving";
+    case Car::State::Breaking: return "Breaking";
+    case Car::State::BreakingHard: return "BreakingHard";
+    case Car::State::Stopped: return "Stopped";
+    case Car::State::Crashed: return "Crashed";
     }
 }
 
-const char* carEndOfLaneStateStr(traffic::Car::EndOfLaneState state) {
+const char* carEndOfLaneStateStr(Car::EndOfLaneState state) {
     switch(state) {
-    case traffic::Car::EndOfLaneState::Default: return "Default";
-    case traffic::Car::EndOfLaneState::ReserveIntersection: return "ReserveIntersection";
-    case traffic::Car::EndOfLaneState::WaitForIntersection: return "WaitForIntersection";
-    case traffic::Car::EndOfLaneState::MoveOnIntersection: return "MoveOnIntersection";
-    case traffic::Car::EndOfLaneState::OnIntersection: return "OnIntersection";
+    case Car::EndOfLaneState::Default: return "Default";
+    case Car::EndOfLaneState::ReserveIntersection: return "ReserveIntersection";
+    case Car::EndOfLaneState::WaitForIntersection: return "WaitForIntersection";
+    case Car::EndOfLaneState::MoveOnIntersection: return "MoveOnIntersection";
+    case Car::EndOfLaneState::OnIntersection: return "OnIntersection";
     }
 }
 
-traffic::traffic(flecs::world& world) {
+cars::cars(flecs::world& world) {
     world.import<flecs::components::transform>();
 
+    // Scopes for storing road and car entities
     world.entity<road_root>("::roads");
     world.entity<car_root>("::cars");
+
+    // Component registration. This makes sure that components can be inspected
+    // with the explorer & serialized to JSON.
 
     world.component<Light::Color>();
 
@@ -52,6 +58,11 @@ traffic::traffic(flecs::world& world) {
         .member("t", &Light::t)
         .member("cycle_time", &Light::cycle_time)
         .member("red_pct", &Light::red_pct);
+
+    // Specifying the path here so that the components get registered in the 
+    // scope of Car vs. in the scope of the module.
+    world.component<Car::State>("Car::State");
+    world.component<Car::EndOfLaneState>("Car::EndOfLaneState");
 
     world.component<Car>()
         .member("position", &Car::position)
@@ -114,13 +125,7 @@ traffic::traffic(flecs::world& world) {
         .member("max_speed", &Intersection::max_speed)
         .add(flecs::With, world.component<IntersectionRoads>());
 
-    world.observer<Corner>()
-        .event(flecs::OnSet)
-        .each([](flecs::entity e, Corner& c) {
-            Lane& l = e.ensure<Lane>();
-            l.length = c.radius * GLM_PI * 0.5;
-        });
-
+    // Utility for systems that should only run when requested
     static auto oneShotSystem = [](flecs::iter& it) {
         while (it.next()) {
             it.each(); // forward to each callback
@@ -129,6 +134,17 @@ traffic::traffic(flecs::world& world) {
         it.system().disable(); // run once
     };
 
+    // Observer that sets the length of a corner lane according to the radius
+    world.observer<Corner>()
+        .event(flecs::OnSet)
+        .each([](flecs::entity e, Corner& c) {
+            Lane& l = e.ensure<Lane>();
+            l.length = c.radius * GLM_PI * 0.5;
+        });
+
+    // System that sets the lane transform. This is used to transform car 
+    // entities that are on the lane and ensures cars have the right position
+    // and rotation.
     flecs::entity setLaneTransform = 
             world.system<const Road, const RoadLanes, Transform>("SetLaneTransform")
         .kind(flecs::PostUpdate)
@@ -171,6 +187,7 @@ traffic::traffic(flecs::world& world) {
             }
         });
 
+    // Connect two roads together.
     flecs::entity connectRoads = 
             world.system<const Road, const RoadLanes>("ConnectRoads")
         .immediate()
@@ -197,6 +214,8 @@ traffic::traffic(flecs::world& world) {
             }
         });
 
+    // Observer that creates a road. A road is a container for two (or in the 
+    // future, more) lanes, one for each direction.
     world.observer<const Road, RoadLanes>("CreateRoad")
         .event(flecs::OnSet)
         .each([=](flecs::entity e, const Road& r, RoadLanes& rl) {
@@ -209,6 +228,7 @@ traffic::traffic(flecs::world& world) {
             flecs::entity right = world.entity().child_of<road_root>();
 
             if (!r.corner) {
+                // Create a regular road
                 left.set(Lane{r.length, r.lane_width, r.max_speed, 0, e})
                     .set(Position{0, 0, (r.lane_width / 2)})
                     .set(Rotation{0, (float)GLM_PI, 0});
@@ -216,6 +236,10 @@ traffic::traffic(flecs::world& world) {
                 right.set(Lane{r.length, r.lane_width, r.max_speed, 0, e})
                      .set(Position{0, 0, -(r.lane_width / 2)});
             } else {
+                // Create a corner road. Set the max speed of corner roads 
+                // according to the radius, so that cars will slow down when
+                // doing a sharp turn.
+
                 float left_radius = r.lane_width * 1.5f;
                 float left_speed = left_radius / 50;
                 if (left_speed > r.max_speed) left_speed = r.max_speed;
@@ -246,6 +270,9 @@ traffic::traffic(flecs::world& world) {
             setLaneTransform.enable();
         });
 
+    // Connect in and outgoing roads (lanes) on intersection. This system will
+    // create the necessary connections based on whether this is a two-way, a
+    // three-way or a four-way intersection.
     flecs::entity connectIntersection = 
             world.system<const Intersection, IntersectionRoads>("ConnectIntersections")
         .immediate()
@@ -254,13 +281,13 @@ traffic::traffic(flecs::world& world) {
         {
             flecs::world world = e.world();
 
-            // get connecting road
-            auto road = [&](traffic::Direction d) {
+            // Get connecting road
+            auto road = [&](Direction d) {
                 return world.entity(i.roads[d].road);
             };
 
-            // get lane from connecting road
-            auto road_lane = [&](traffic::Direction d, bool flip = false) {
+            // Get lane from connecting road
+            auto roadLane = [&](Direction d, bool flip = false) {
                 int8_t lane = i.roads[d].edge;
                 if (flip) {
                     lane = 1 - lane;
@@ -268,8 +295,8 @@ traffic::traffic(flecs::world& world) {
                 return world.entity(road(d).get<RoadLanes>()[lane]);
             };
 
-            // get lane from road on intersection
-            auto i_lane = [&](traffic::Connection c, int8_t lane) {
+            // Get lane from road on intersection
+            auto intersectionLane = [&](Connection c, int8_t lane) {
                 if (!ir[c]) {
                     return flecs::entity::null();
                 }
@@ -280,7 +307,7 @@ traffic::traffic(flecs::world& world) {
 
             // Get movement for incoming lane. If there's only one available
             // don't create movement but connect it directly.
-            auto i_movement = [&](Direction d, std::array<flecs::entity, 3> lanes) {
+            auto intersectionMovement = [&](Direction d, std::array<flecs::entity, 3> lanes) {
                 flecs::entity_t lane = 0;
                 int32_t count = 0;
 
@@ -304,76 +331,78 @@ traffic::traffic(flecs::world& world) {
 
             // Populate outgoing lanes for each incoming direction
             if (road(Top)) {
-                road_lane(Top, true).get_mut<Lane>().next = 
-                    i_movement(Top, {
-                        i_lane(TopToRight, 0), 
-                        i_lane(TopToBottom, 0), 
-                        i_lane(TopToLeft, 0) 
+                roadLane(Top, true).get_mut<Lane>().next = 
+                    intersectionMovement(Top, {
+                        intersectionLane(TopToRight, 0), 
+                        intersectionLane(TopToBottom, 0), 
+                        intersectionLane(TopToLeft, 0) 
                     });
             }
 
             if (road(Bottom)) {
-                road_lane(Bottom, true).get_mut<Lane>().next = 
-                    i_movement(Bottom, {
-                        i_lane(BottomToLeft, 0),
-                        i_lane(TopToBottom, 1), 
-                        i_lane(BottomToRight, 0)
+                roadLane(Bottom, true).get_mut<Lane>().next = 
+                    intersectionMovement(Bottom, {
+                        intersectionLane(BottomToLeft, 0),
+                        intersectionLane(TopToBottom, 1), 
+                        intersectionLane(BottomToRight, 0)
                     });
             }
 
             if (road(Left)) {
-                road_lane(Left, true).get_mut<Lane>().next = 
-                    i_movement(Left, {
-                        i_lane(TopToLeft, 1),
-                        i_lane(LeftToRight, 0), 
-                        i_lane(BottomToLeft, 1)
+                roadLane(Left, true).get_mut<Lane>().next = 
+                    intersectionMovement(Left, {
+                        intersectionLane(TopToLeft, 1),
+                        intersectionLane(LeftToRight, 0), 
+                        intersectionLane(BottomToLeft, 1)
                     });
             }
 
             if (road(Right)) {
-                road_lane(Right, true).get_mut<Lane>().next = 
-                    i_movement(Right, {
-                        i_lane(BottomToRight, 1),
-                        i_lane(LeftToRight, 1), 
-                        i_lane(TopToRight, 1)
+                roadLane(Right, true).get_mut<Lane>().next = 
+                    intersectionMovement(Right, {
+                        intersectionLane(BottomToRight, 1),
+                        intersectionLane(LeftToRight, 1), 
+                        intersectionLane(TopToRight, 1)
                     });
             }
 
-            // Add traffic lights go incoming lanes
+            // Add traffic lights to incoming lanes
             // TODO
 
             // Connect movements to outgoing lanes
             if (road(Top) && road(Bottom)) {
-                i_lane(TopToBottom, 0).get_mut<Lane>().next = road_lane(Bottom);
-                i_lane(TopToBottom, 1).get_mut<Lane>().next = road_lane(Top);
+                intersectionLane(TopToBottom, 0).get_mut<Lane>().next = roadLane(Bottom);
+                intersectionLane(TopToBottom, 1).get_mut<Lane>().next = roadLane(Top);
             }
 
             if (road(Left) && road(Right)) {
-                i_lane(LeftToRight, 0).get_mut<Lane>().next = road_lane(Right);
-                i_lane(LeftToRight, 1).get_mut<Lane>().next = road_lane(Left);
+                intersectionLane(LeftToRight, 0).get_mut<Lane>().next = roadLane(Right);
+                intersectionLane(LeftToRight, 1).get_mut<Lane>().next = roadLane(Left);
             }
 
             if (road(Top) && road(Right)) {
-                i_lane(TopToRight, 0).get_mut<Lane>().next = road_lane(Right);
-                i_lane(TopToRight, 1).get_mut<Lane>().next = road_lane(Top);
+                intersectionLane(TopToRight, 0).get_mut<Lane>().next = roadLane(Right);
+                intersectionLane(TopToRight, 1).get_mut<Lane>().next = roadLane(Top);
             }
 
             if (road(Top) && road(Left)) {
-                i_lane(TopToLeft, 0).get_mut<Lane>().next = road_lane(Left);
-                i_lane(TopToLeft, 1).get_mut<Lane>().next = road_lane(Top);
+                intersectionLane(TopToLeft, 0).get_mut<Lane>().next = roadLane(Left);
+                intersectionLane(TopToLeft, 1).get_mut<Lane>().next = roadLane(Top);
             }
 
             if (road(Bottom) && road(Right)) {
-                i_lane(BottomToRight, 0).get_mut<Lane>().next = road_lane(Right);
-                i_lane(BottomToRight, 1).get_mut<Lane>().next = road_lane(Bottom);
+                intersectionLane(BottomToRight, 0).get_mut<Lane>().next = roadLane(Right);
+                intersectionLane(BottomToRight, 1).get_mut<Lane>().next = roadLane(Bottom);
             }
 
             if (road(Bottom) && road(Left)) {
-                i_lane(BottomToLeft, 0).get_mut<Lane>().next = road_lane(Left);
-                i_lane(BottomToLeft, 1).get_mut<Lane>().next = road_lane(Bottom);
+                intersectionLane(BottomToLeft, 0).get_mut<Lane>().next = roadLane(Left);
+                intersectionLane(BottomToLeft, 1).get_mut<Lane>().next = roadLane(Bottom);
             }
         });
 
+    // Create intersection. An intersection is a container for at least two and
+    // at most four roads.
     world.observer<const Intersection, IntersectionRoads>("CreateIntersection")
         .event(flecs::OnSet)
         .each([=](flecs::entity e, const Intersection& i, IntersectionRoads& ir) {
@@ -450,6 +479,8 @@ traffic::traffic(flecs::world& world) {
             }
         });
 
+    // Cars move "on rails", meaning they only have a single float value to 
+    // express their position on their current lane.
     world.system<LaneCars>("LaneProgressCars")
         .each([](LaneCars& cars) {
             for (int i = 0; i < MaxCarsPerLane; i ++) {
@@ -458,6 +489,10 @@ traffic::traffic(flecs::world& world) {
             }
         });
 
+    // Performance optimization: instead of processing each lane every tick, 
+    // each lane is processed every 8 ticks. The LaneTick is used by systems 
+    // that progress the lanes to determine which lane should be processed in
+    // the current tick.
     static int LaneTick = 0;
 
     world.system("IncrementLaneTick")
@@ -468,6 +503,10 @@ traffic::traffic(flecs::world& world) {
             }
         });
 
+    // The main system that determines the behavior of cars. Cars are "on rails"
+    // meaning they can only move along the direction of the current lane 
+    // they're on. As a result, the individual behavior of the cars is 
+    // exclusively defined by their speed.
     world.system<const Lane, LaneCars, const Light*>("LaneCarSetTargetSpeed")
         .each([](flecs::iter& it, size_t row, const Lane& lane, 
             LaneCars& cars, const Light* light) 
@@ -477,6 +516,7 @@ traffic::traffic(flecs::world& world) {
                 return;
             }
 
+            // Determine if lane should be processed this tick
             if ((it.entity(row).id() & 7) != LaneTick) {
                 return;
             }
@@ -549,7 +589,9 @@ traffic::traffic(flecs::world& world) {
                 car.target_speed = target_speed;
             };
 
-            // First car
+            // The first car needs additional handling since it needs to 
+            // lookahead to the next lane to see what's coming. The cars behind
+            // it just follow the car in front of them.
             {
                 Car& car = cars[0];
 
@@ -627,6 +669,10 @@ traffic::traffic(flecs::world& world) {
                     }
                 }
 
+                // This should never happen since we check whether there's space
+                // in the lane after the intersection before moving on the 
+                // intersection. If this were to happen it can gridlock the
+                // simulation.
                 if (car.target_speed == 0 && 
                     car.eol_state == Car::EndOfLaneState::MoveOnIntersection) 
                 {
@@ -635,7 +681,8 @@ traffic::traffic(flecs::world& world) {
                 }
             }
 
-            // Remaining cars
+            // Remaining cars. Calls the same setTargetSpeed function but just
+            // with the car that's in front.
             for (int i = 1; i < cars.count; i ++) {
                 Car& car = cars[i];
                 Car& next = cars[i - 1];
@@ -645,16 +692,27 @@ traffic::traffic(flecs::world& world) {
             }
         });
 
+    // This system sets the state of the first car in the lane based on what the
+    // lane is connected to. If the lane is connected to just another lane, 
+    // nothing special needs to happen. If the lane is connected to an 
+    // intersection, the car has to pick a direction and reserve the 
+    // intersection. Future traffic light handling will also go here.
     world.system<const Lane, LaneCars>("LaneSetEndOfLaneState")
         .each([](flecs::iter& it, size_t row, const Lane& lane, LaneCars& cars) {
+            if (!cars.count) {
+                return;
+            }
+
             flecs::world world = it.world();
             flecs::entity next_lane = world.entity(lane.next);
-
+            
+            // Determine if lane should be processed this tick
             if ((it.entity(row).id() & 7) != LaneTick) {
                 return;
             }
 
-            auto find_next_lane = [&](const IntersectionMovement& im) {
+            // Select a lane to move to when approaching an intersection.
+            auto findNextLane = [&](const IntersectionMovement& im) {
                 int8_t turn = rand() % 3;
 
                 if (!im.lanes[turn]) {
@@ -674,7 +732,8 @@ traffic::traffic(flecs::world& world) {
                 return im.lanes[turn];
             };
 
-            auto space_in_lane = [&](flecs::entity lane) {
+            // Find out how much space is left in the lane.
+            auto spaceInLane = [&](flecs::entity lane) {
                 const LaneCars& cars = lane.get<LaneCars>();
                 if (!cars.count) {
                     return lane.get<Lane>().length;
@@ -684,101 +743,115 @@ traffic::traffic(flecs::world& world) {
                 return last_car.position - last_car.length;
             };
 
-            if (cars.count) {
-                // Only need to run logic for the first car. The rest of the 
-                // cars will follow, and once the car moves onto the next lane
-                // the next car becomes the first car.
-                Car& car = cars[0];
+            // Only need to run logic for the first car. The rest of the 
+            // cars will follow, and once the car moves onto the next lane
+            // the next car becomes the first car.
+            Car& car = cars[0];
 
-                // Can only transition to end of lane state if we're in the
-                // default state & we're near the end of the lane.
-                if (car.eol_state == Car::EndOfLaneState::Default) {
-                    float min_d = minDistanceForSpeed(car.speed);
-                    if (min_d < 1) {
-                        min_d = 1;
-                    }
-
-                    if ((lane.length - car.position) < min_d) {
-                        // If the next lane isn't an ordinary lane, it's an
-                        // intersection.
-                        if (!next_lane.has<Lane>()) {
-                            car.eol_state = 
-                                Car::EndOfLaneState::ReserveIntersection;
-                        }
-                    }
+            // Can only transition to end of lane state if we're in the
+            // default state & we're near the end of the lane.
+            if (car.eol_state == Car::EndOfLaneState::Default) {
+                float min_d = minDistanceForSpeed(car.speed);
+                if (min_d < 1) {
+                    min_d = 1;
                 }
 
-                switch(car.eol_state) {
-                case Car::EndOfLaneState::Default:
-                    car.wait_count = 0;
-                    break;
-                case Car::EndOfLaneState::ReserveIntersection: {
-                    const auto& im = next_lane.get<IntersectionMovement>();
-                    auto& ir = world.entity(im.intersection).get_mut<IntersectionRoads>();
-                    car.reservation = ir.reserve();
-                    car.next_lane = find_next_lane(im);
-                    car.eol_state = Car::EndOfLaneState::WaitForIntersection;
-                    car.target_speed = 0;
-                    break;
+                if ((lane.length - car.position) < min_d) {
+                    // If the next lane isn't an ordinary lane, it's an
+                    // intersection.
+                    if (!next_lane.has<Lane>()) {
+                        car.eol_state = 
+                            Car::EndOfLaneState::ReserveIntersection;
+                    }
                 }
+            }
 
-                case Car::EndOfLaneState::WaitForIntersection: {
-                    const auto& im = next_lane.get<IntersectionMovement>();
-                    auto& ir = world.entity(im.intersection).get_mut<IntersectionRoads>();
+            switch(car.eol_state) {
+            
+            // Default end of lane state: used when moving into another lane.
+            case Car::EndOfLaneState::Default:
+                car.wait_count = 0;
+                break;
 
-                    // It's our turn to move to the intersection
-                    if (ir.current_reservation == car.reservation) {
-                        // Check if destination lane is free. We don't want to
-                        // move onto a lane that's not free yet as this could
-                        // cause the car to block the intersection, which leads
-                        // to gridlocks.
-                        flecs::entity dst_lane = world.entity(car.next_lane);
+            // We're approaching an intersection, reserve it and select the
+            // lane we want to move into.
+            case Car::EndOfLaneState::ReserveIntersection: {
+                const auto& im = next_lane.get<IntersectionMovement>();
+                auto& ir = world.entity(im.intersection).get_mut<IntersectionRoads>();
+                car.reservation = ir.reserve();
+                car.next_lane = findNextLane(im);
+                car.eol_state = Car::EndOfLaneState::WaitForIntersection;
+                car.target_speed = 0;
+                break;
+            }
 
-                        // Lane should be empty, or we shouldn't have been 
-                        // allowed on the intersection.
-                        assert(dst_lane.get<LaneCars>().count == 0);
+            // We've created a reservation for the intersection. Now we need to
+            // wait until we acquire it.
+            case Car::EndOfLaneState::WaitForIntersection: {
+                const auto& im = next_lane.get<IntersectionMovement>();
+                auto& ir = world.entity(im.intersection).get_mut<IntersectionRoads>();
 
-                        // Next lane is on intersection, we want to know whether
-                        // the lane after that has enough space.
-                        dst_lane = world.entity(dst_lane.get<Lane>().next);
+                // It's our turn to move to the intersection
+                if (ir.current_reservation == car.reservation) {
+                    // Check if destination lane is free. We don't want to
+                    // move onto a lane that's not free yet as this could
+                    // cause the car to block the intersection, which leads
+                    // to gridlocks.
+                    flecs::entity dst_lane = world.entity(car.next_lane);
 
-                        if (space_in_lane(dst_lane) < car.length) {
-                            // Can't move to destination lane, release intersection
-                            ir.release(car.reservation);
-                            car.eol_state = Car::EndOfLaneState::ReserveIntersection;
-                        } else {
-                            car.eol_state = Car::EndOfLaneState::MoveOnIntersection;
-                        }
+                    // Lane should be empty, or we shouldn't have been 
+                    // allowed on the intersection.
+                    assert(dst_lane.get<LaneCars>().count == 0);
+
+                    // Next lane is on intersection, we want to know whether
+                    // the lane after that has enough space.
+                    dst_lane = world.entity(dst_lane.get<Lane>().next);
+
+                    if (spaceInLane(dst_lane) < car.length) {
+                        // Can't move to destination lane, release intersection
+                        ir.release(car.reservation);
+                        car.eol_state = Car::EndOfLaneState::ReserveIntersection;
                     } else {
-                        car.wait_count ++;
-                        if (car.wait_count > MaxWaitCount) {
-                            // If we're waiting too long try different lane. 
-                            // This can prevent gridlocking where all incoming
-                            // lanes are waiting on an outcoming lane that's
-                            // blocked.
-                            car.next_lane = find_next_lane(im);
-                            car.wait_count = 0;
-                        }
+                        car.eol_state = Car::EndOfLaneState::MoveOnIntersection;
                     }
-                    break;
+                } else {
+                    car.wait_count ++;
+
+                    if (car.wait_count > MaxWaitCount) {
+                        // If we're waiting too long try different lane. 
+                        // This can prevent gridlocking where all incoming
+                        // lanes are waiting on an outcoming lane that's
+                        // blocked.
+                        car.next_lane = findNextLane(im);
+                        car.wait_count = 0;
+                    }
                 }
-                case Car::EndOfLaneState::MoveOnIntersection:
-                    break;
-                case Car::EndOfLaneState::OnIntersection:
-                    break;
-                }
+                break;
+            }
+
+            // We're moving on the intersection. Nothing needs to be done here,
+            // when we enter the next lane the state will get updated to
+            // OnIntersection.
+            case Car::EndOfLaneState::MoveOnIntersection:
+                break;
+
+            // We're on the intersection. Nothing needs to be done here, as the
+            // state will reset to Default once we move off the intersection.
+            case Car::EndOfLaneState::OnIntersection:
+                break;
             }
         });
 
+    // Set driving behavior based on target speed
     world.system<const Lane, LaneCars, const Light*>("LaneCarSetDrivingState")
         .each([](flecs::iter& it, size_t row, const Lane& lane, 
             LaneCars& cars, const Light* light) 
         {
+            // Determine if lane should be processed this tick
             if ((it.entity(row).id() & 7) != LaneTick) {
                 return;
             }
 
-            // Set driving behavior based on target speed
             auto setDrivingState = [](Car& car) {
                 if (car.target_speed < car.speed) {
                     car.state = Car::State::Breaking;
@@ -814,7 +887,7 @@ traffic::traffic(flecs::world& world) {
                 if (car.state == Car::State::Crashed) {
                     continue;
                 }
-                
+
                 switch(car.state) {
                 case Car::State::Accelerating:
                     assert(car.speed <= car.target_speed);
@@ -850,6 +923,10 @@ traffic::traffic(flecs::world& world) {
                 if (car.speed <= 0) {
                     if (car.state != Car::State::Stopped) {
                         if (car.eol_state == Car::EndOfLaneState::OnIntersection) {
+                            // This should never happen since we check whether
+                            // there's space in the lane after the intersection
+                            // before we move on the intersection. If this 
+                            // happens it could cause a gridlock.
                             flecs::log::err("[%u] car stopped on intersection",
                                 it.entity(row).get<LaneCarEntities>()[i]);
                         }
@@ -861,6 +938,8 @@ traffic::traffic(flecs::world& world) {
             }
         });
 
+    // System that finds all cars that have moved beyond the end of the lane,
+    // and moves the car to the next lane.
     world.system<Lane, LaneCars, LaneCarEntities>("LaneMoveCarsToNextLane")
         .each([](flecs::iter& it, size_t row, Lane& lane, LaneCars& cars, LaneCarEntities& car_entities) {
             flecs::world world = it.world();
@@ -899,6 +978,10 @@ traffic::traffic(flecs::world& world) {
                                 .get_mut<IntersectionRoads>()
                                 .release(car.reservation);
                         } else if (car.eol_state != Car::EndOfLaneState::Default) {
+                            // This could happen if a car didn't start breaking
+                            // soon enough and entered the intersection without
+                            // a reservation. Shouldn't happen as this could 
+                            // cause cars to crash.
                             flecs::log::err(
                                 "car %u doesn't have the right state to move on intersection",
                                 car_entities[j]);
@@ -928,6 +1011,13 @@ traffic::traffic(flecs::world& world) {
             }
         });
 
+    // For efficiency reasons the simulation works exclusively on car arrays on
+    // the Lane component. To actually visualize the cars however we need 
+    // entities. This system updates the entities associated with the cars in
+    // the simulation with the most up to date position and rotation.
+    // Without this system the simulation would still run, but the cars would 
+    // not appear to be moving. It would theoretically be possible to only 
+    // update the car entities that are visible.
     world.system<const Lane, const LaneCars, const LaneCarEntities, 
             LaneTransform, const Corner*>("LaneUpdateCarEntities")
         .each([](flecs::iter& it, size_t row, 
@@ -946,8 +1036,10 @@ traffic::traffic(flecs::world& world) {
                 float t = 0;
 
                 if (!corner) {
+                    // For normal lanes cars simply follow a straight line.
                     p[0] = car.position - lane.length / 2.0;
                 } else {
+                    // For corner lanes cars trace a quarter of a circle.
                     float pos = car.position;
                     if (corner->invert_direction) {
                         pos = lane.length - pos;
@@ -957,23 +1049,24 @@ traffic::traffic(flecs::world& world) {
                     p[2] = cos(t) * corner->radius - corner->radius;
                 }
 
+                // Get actual position by multiplying the car position with the
+                // lane transform
                 glm_mat4_mulv3(transform.value, p, 1.0f, p);
 
-                flecs::entity e = world.entity(car_entities.cars[i])
-                    .assign(car)
-                    .assign(Position{
-                        p[0], 
-                        p[1] + 0.5f, 
-                        p[2]});
-
+                // Get the car rotation from the lane transform matrix, add it
+                // to any rotation from being on a corner.
                 Rotation car_rotation = {};
                 car_rotation.y = atan2(transform.value[0][2], transform.value[2][2]);
                 if (corner) {
                     car_rotation.y += t;
                 }
 
-                e.assign(car_rotation);
+                flecs::entity e = world.entity(car_entities.cars[i])
+                    .assign(car)
+                    .assign(Position{ p[0], p[1] + 0.5f, p[2] })
+                    .assign(car_rotation);
 
+                // Assign a color based on the car state.
                 if (car.state == Car::State::Accelerating) {
                     e.assign(Color{0.4, 1, 0.1});
                 } else if (car.state == Car::State::Breaking) {
@@ -991,7 +1084,7 @@ traffic::traffic(flecs::world& world) {
         });
 }
 
-void traffic::addCarToLane(
+void addCarToLane(
     flecs::entity in_lane, 
     flecs::entity out_lane, 
     flecs::entity car_entity, 
@@ -1007,7 +1100,7 @@ void traffic::addCarToLane(
         return;
     }
 
-    LaneCars *cars = out_lane.try_get_mut<traffic::LaneCars>();
+    LaneCars *cars = out_lane.try_get_mut<LaneCars>();
     if (!cars) {
         flecs::log::err("lane is missing LaneCars component while moving car %u!", car_entity.id());
         return;
@@ -1048,12 +1141,14 @@ void traffic::addCarToLane(
     assert(cars->count < MaxCarsPerLane);
 }
 
-flecs::entity traffic::roadFromLane(flecs::entity lane) {
+flecs::entity roadFromLane(flecs::entity lane) {
     flecs::world world = lane.world();
-    return world.entity(lane.get<traffic::Lane>().road);
+    return world.entity(lane.get<Lane>().road);
 }
 
-flecs::entity traffic::intersectionFromLane(flecs::entity lane) {
+flecs::entity intersectionFromLane(flecs::entity lane) {
     flecs::world world = lane.world();
     return roadFromLane(lane).parent();
+}
+
 }

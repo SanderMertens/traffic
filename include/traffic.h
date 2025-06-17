@@ -3,7 +3,7 @@
 
 /* This generated file contains includes for project dependencies */
 #include "traffic/bake_config.h"
-#include "traffic/traffic.h"
+#include "traffic/cars.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     world.import<flecs::game>();
     world.import<flecs::systems::sokol>();
 
-    world.import<traffic>();
+    world.import<traffic::cars>();
 
     world.script().filename("etc/assets/app.flecs").run();
     world.script().filename("etc/assets/main.flecs").run();
