@@ -15,13 +15,13 @@ $ {
 
 camera {
   CameraController
-  Position3: {40, 30, -40}
+  Position3: {80, 30, -40}
   Rotation3: {-0.32, 0, 0}
   Camera: {
     fov: 20
     up: [0, 1, 0]
     near_: 1
-    far_: 1500
+    far_: 4000
   }
 }
 

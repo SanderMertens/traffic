@@ -960,10 +960,10 @@ traffic::traffic(flecs::world& world) {
                 glm_mat4_mulv3(transform.value, p, 1.0f, p);
 
                 flecs::entity e = world.entity(car_entities.cars[i])
-                    .set(car)
-                    .set(Position{
+                    .assign(car)
+                    .assign(Position{
                         p[0], 
-                        p[1] + 0.5, 
+                        p[1] + 0.5f, 
                         p[2]});
 
                 Rotation car_rotation = {};
@@ -972,20 +972,20 @@ traffic::traffic(flecs::world& world) {
                     car_rotation.y += t;
                 }
 
-                e.set(car_rotation);
+                e.assign(car_rotation);
 
                 if (car.state == Car::State::Accelerating) {
-                    e.set(Color{0.4, 1, 0.1});
+                    e.assign(Color{0.4, 1, 0.1});
                 } else if (car.state == Car::State::Breaking) {
-                    e.set(Color{1, 0.4, 0.1});
+                    e.assign(Color{1, 0.4, 0.1});
                 } else if (car.state == Car::State::BreakingHard) {
-                    e.set(Color{1, 0.4, 0.1});
+                    e.assign(Color{1, 0.4, 0.1});
                 } else if (car.state == Car::State::Stopped) {
-                    e.set(Color{1, 0.1, 0.0});
+                    e.assign(Color{1, 0.1, 0.0});
                 } else if (car.state == Car::State::Crashed) {
-                    e.set(Color{0});
+                    e.assign(Color{0});
                 } else {
-                    e.set(Color{0.4, 1, 0.1});
+                    e.assign(Color{0.4, 1, 0.1});
                 }
             }
         });

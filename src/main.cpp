@@ -5,6 +5,8 @@ using Box = flecs::components::geometry::Box;
 using Color = flecs::components::graphics::Color;
 using Emissive = flecs::components::graphics::Emissive;
 using SelfLight = flecs::components::graphics::SelfLight;
+using Position = flecs::components::transform::Position3;
+using Rotation = flecs::components::transform::Rotation3;
 
 float randf(int n) {
     return static_cast<float>(rand() % n);
@@ -74,12 +76,16 @@ int main(int argc, char *argv[]) {
 
             flecs::entity car = world.entity().child_of<traffic::car_root>()
                 .set(traffic::Car{})
+                .set(Position{})
+                .set(Rotation{})
                 .set(Box{3, 1, 1})
                 .set(Emissive{0.8})
                 .set(Color{1, 0, 1});
             traffic::addCarToLane(flecs::entity::null(), lane, car, i * 8 + randf(5));
         }
     });
+
+    world.set_target_fps(60);
 
     return world.app()
         .enable_rest()

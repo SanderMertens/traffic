@@ -19,6 +19,10 @@
         "standalone": true
     },
     "lang.c": {
-        "defines": ["FLECS_SCRIPT_MATH"]
+        "defines": ["FLECS_SCRIPT_MATH"],
+        "${target em}": {
+            "ldflags": ["-sSTACK_SIZE=1000000", "-Wl,-u,ntohs"],
+            "embed": ["etc/assets"]
+        }
     }
 }

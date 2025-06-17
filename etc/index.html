@@ -1,0 +1,33 @@
+<html>
+  <head>
+    <title>Flecs Traffic Simulation</title>
+    <link rel="icon" href="img/flecs_logo.png" />
+  </head>
+  <body style="background-color: #101115; color: #DDE0E6;">  
+    <!-- Create the canvas that the C++ code will draw into -->
+    <span style="font-family: Arial, Helvetica, sans-serif;">
+      [ <a style="color: #A2D8B4;" 
+        href="https://github.com/SanderMertens/traffic" 
+        target="_blank">
+        Source
+      </a> ]
+      <!-- [ <a style="color: #A2D8B4;" 
+        href="https://www.flecs.dev/explorer/?host=https://www.flecs.dev/tower_defense/etc/tower_defense.wasm" 
+        target="_blank">
+        Open in Explorer
+      </a> ] -->
+      &nbsp;-&nbsp;
+      Use WASD + QE to move camera, arrow keys to look around (<b>work in progress!</b>)
+    </span>
+
+    <canvas id="canvas" 
+      style="width: 100%; height: 100%;">
+    </canvas>
+
+    <script src="traffic.js"></script>
+
+    <script type='text/javascript'>
+      traffic();
+    </script>
+  </body>
+</html>
