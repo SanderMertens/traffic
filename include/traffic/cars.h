@@ -121,10 +121,6 @@ struct Lane {
     flecs::entity_t road;
 };
 
-struct LaneTransform {
-    mat4 value; // for transforming car positions on lane
-};
-
 struct Corner {
     float radius;
     bool invert_direction;

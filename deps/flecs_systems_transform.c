@@ -1,5 +1,7 @@
 #include "flecs_systems_transform.h"
 
+ECS_TAG_DECLARE(EcsTransformManually);
+
 void EcsApplyTransform3(ecs_iter_t *it) {
     while (ecs_query_next(it)) {
         EcsTransform3 *m = ecs_field(it, EcsTransform3, 0);
@@ -63,6 +65,8 @@ void FlecsSystemsTransformImport(
 
     ecs_set_name_prefix(world, "Ecs");
 
+    ECS_TAG_DEFINE(world, EcsTransformManually);
+
     ecs_add_pair(world, ecs_id(EcsPosition3), EcsWith, ecs_id(EcsTransform3));
     ecs_add_pair(world, ecs_id(EcsRotation3), EcsWith, ecs_id(EcsTransform3));
     ecs_add_pair(world, ecs_id(EcsScale3),    EcsWith, ecs_id(EcsTransform3));
@@ -96,6 +100,10 @@ void FlecsSystemsTransformImport(
                 .id = ecs_id(EcsScale3),
                 .inout = EcsIn,
                 .oper = EcsOptional
+            },
+            {
+                .id = EcsTransformManually,
+                .oper = EcsNot
             }}
         },
         .run = EcsApplyTransform3

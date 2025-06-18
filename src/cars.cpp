@@ -1,12 +1,6 @@
 #include "traffic.h"
 #include <algorithm>
 
-using Position = flecs::components::transform::Position3;
-using Rotation = flecs::components::transform::Rotation3;
-using Scale = flecs::components::transform::Scale3;
-using Transform = flecs::components::transform::Transform3;
-using Color = flecs::components::graphics::Color;
-
 namespace traffic {
 
 float minDistanceForSpeed(float s1) {
@@ -74,7 +68,9 @@ cars::cars(flecs::world& world) {
         .member("eol_state", &Car::eol_state)
         .member("reservation", &Car::reservation)
         .member("wait_count", &Car::wait_count)
-        .member("next_lane", &Car::next_lane);
+        .member("next_lane", &Car::next_lane)
+        .add(flecs::With, world.component<Transform>())
+        .add(flecs::With, world.component<TransformManually>());
 
     world.component<LaneCars>()
         .member("cars", &LaneCars::cars)
@@ -134,6 +130,20 @@ cars::cars(flecs::world& world) {
         it.system().disable(); // run once
     };
 
+    // Performance optimization: instead of processing all lanes every tick, 
+    // lanes are processed every 8 ticks. The LaneTick is used by systems 
+    // that progress the lanes to determine which lane should be processed in
+    // the current tick.
+    static int LaneTick = 0;
+
+    world.system("IncrementLaneTick")
+        .run([](flecs::iter& it) {
+            LaneTick ++;
+            if (LaneTick == 8) {
+                LaneTick = 0;
+            }
+        });
+
     // Observer that sets the length of a corner lane according to the radius
     world.observer<Corner>()
         .event(flecs::OnSet)
@@ -156,14 +166,15 @@ cars::cars(flecs::world& world) {
             flecs::entity left = world.entity(rl[1]);
             flecs::entity right = world.entity(rl[0]);
 
-            // Remove Transform component so lanes don't get automatically
-            // transformed. Because lanes aren't children of their road, the
-            // resulting matrix would be useless.
-            left.remove<Transform>();
-            right.remove<Transform>();
+            // Mark lanes so they don't get transformed automatically by the
+            // transform system. Because lanes aren't children of their road, 
+            // the resulting matrix would be useless, and since they don't move
+            // there is no point in transforming them each frame.
+            left.add<TransformManually>();
+            right.add<TransformManually>();
 
-            LaneTransform& l_lt = left.ensure<LaneTransform>();
-            LaneTransform& r_lt = right.ensure<LaneTransform>();
+            Transform& l_lt = left.ensure<Transform>();
+            Transform& r_lt = right.ensure<Transform>();
 
             const Position& l_p = left.get<Position>();
             const Position& r_p = right.get<Position>();
@@ -411,7 +422,7 @@ cars::cars(flecs::world& world) {
 
             // top <-> down
             if (i.roads[Top].road && i.roads[Bottom].road) {
-                ir.roads[TopToBottom] = world.entity().child_of(e)
+                ir.roads[TopToBottom] = e.child()
                     .set(Road{i.lane_width * 2, i.lane_width, i.max_speed, false})
                     .set(Position{0, 0, 0})
                     .set(Rotation{0, GLM_PI * 1.5, 0});
@@ -419,7 +430,7 @@ cars::cars(flecs::world& world) {
 
             // left <-> right
             if (i.roads[Left].road && i.roads[Right].road) {
-                ir.roads[LeftToRight] = world.entity().child_of(e)
+                ir.roads[LeftToRight] = e.child()
                     .set(Road{i.lane_width * 2, i.lane_width, i.max_speed, false})
                     .set(Position{0, 0, 0})
                     .set(Rotation{0, GLM_PI, 0});
@@ -427,7 +438,7 @@ cars::cars(flecs::world& world) {
 
             // top <-> left
             if (i.roads[Left].road && i.roads[Top].road) {
-                ir.roads[TopToLeft] = world.entity().child_of(e)
+                ir.roads[TopToLeft] = e.child()
                     .set(Road{i.lane_width, i.lane_width, i.max_speed, true, true})
                     .set(Position{0, 0, 0})
                     .set(Rotation{0, GLM_PI / 2, 0});
@@ -435,7 +446,7 @@ cars::cars(flecs::world& world) {
 
             // top <-> right
             if (i.roads[Right].road && i.roads[Top].road) {
-                ir.roads[TopToRight] = world.entity().child_of(e)
+                ir.roads[TopToRight] = e.child()
                     .set(Road{i.lane_width, i.lane_width, i.max_speed, true})
                     .set(Position{0, 0, 0})
                     .set(Rotation{0, GLM_PI, 0});
@@ -443,7 +454,7 @@ cars::cars(flecs::world& world) {
 
             // bottom <-> right
             if (i.roads[Right].road && i.roads[Bottom].road) {
-                ir.roads[BottomToRight] = world.entity().child_of(e)
+                ir.roads[BottomToRight] = e.child()
                     .set(Road{i.lane_width, i.lane_width, i.max_speed, true, true})
                     .set(Position{0, 0, 0})
                     .set(Rotation{0, GLM_PI * 1.5, 0});
@@ -451,7 +462,7 @@ cars::cars(flecs::world& world) {
 
             // bottom <-> left
             if (i.roads[Left].road && i.roads[Bottom].road) {
-                ir.roads[BottomToLeft] = world.entity().child_of(e)
+                ir.roads[BottomToLeft] = e.child()
                     .set(Road{i.lane_width, i.lane_width, i.max_speed, true})
                     .set(Position{0, 0, 0});
             }
@@ -486,20 +497,6 @@ cars::cars(flecs::world& world) {
             for (int i = 0; i < MaxCarsPerLane; i ++) {
                 Car& car = cars[i];
                 car.position += car.speed;
-            }
-        });
-
-    // Performance optimization: instead of processing each lane every tick, 
-    // each lane is processed every 8 ticks. The LaneTick is used by systems 
-    // that progress the lanes to determine which lane should be processed in
-    // the current tick.
-    static int LaneTick = 0;
-
-    world.system("IncrementLaneTick")
-        .run([](flecs::iter& it) {
-            LaneTick ++;
-            if (LaneTick == 8) {
-                LaneTick = 0;
             }
         });
 
@@ -1019,20 +1016,21 @@ cars::cars(flecs::world& world) {
     // not appear to be moving. It would theoretically be possible to only 
     // update the car entities that are visible.
     world.system<const Lane, const LaneCars, const LaneCarEntities, 
-            LaneTransform, const Corner*>("LaneUpdateCarEntities")
+            Transform, const Corner*>("LaneUpdateCarEntities")
         .each([](flecs::iter& it, size_t row, 
             const Lane& lane, 
             const LaneCars& cars, 
             const LaneCarEntities& car_entities,
-            LaneTransform& transform,
+            Transform& transform,
             const Corner *corner)
         {
             flecs::world world = it.world();
 
             for (int i = 0; i < cars.count; i ++) {
+                flecs::entity e = world.entity(car_entities[i]);                
                 const Car& car = cars[i];
 
-                vec4 p = {0.0, 0.0, 0.0};
+                vec4 p = {0.0, 0.5f, 0.0};
                 float t = 0;
 
                 if (!corner) {
@@ -1049,22 +1047,14 @@ cars::cars(flecs::world& world) {
                     p[2] = cos(t) * corner->radius - corner->radius;
                 }
 
-                // Get actual position by multiplying the car position with the
-                // lane transform
-                glm_mat4_mulv3(transform.value, p, 1.0f, p);
+                Transform car_transform;
+                glm_translate_to(transform.value, p, car_transform.value);
+                glm_rotate(car_transform.value, t, (vec3){0.0, 1.0, 0.0});
+                e.assign(car_transform);
 
-                // Get the car rotation from the lane transform matrix, add it
-                // to any rotation from being on a corner.
-                Rotation car_rotation = {};
-                car_rotation.y = atan2(transform.value[0][2], transform.value[2][2]);
-                if (corner) {
-                    car_rotation.y += t;
-                }
-
-                flecs::entity e = world.entity(car_entities.cars[i])
-                    .assign(car)
-                    .assign(Position{ p[0], p[1] + 0.5f, p[2] })
-                    .assign(car_rotation);
+                // Not strictly necessary for the simulation, but makes it 
+                // possible to inspect what each car is doing.
+                e.assign(car);
 
                 // Assign a color based on the car state.
                 if (car.state == Car::State::Accelerating) {

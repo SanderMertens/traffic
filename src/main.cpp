@@ -1,13 +1,6 @@
 #include <traffic.h>
 #include <iostream>
 
-using Box = flecs::components::geometry::Box;
-using Color = flecs::components::graphics::Color;
-using Emissive = flecs::components::graphics::Emissive;
-using SelfLight = flecs::components::graphics::SelfLight;
-using Position = flecs::components::transform::Position3;
-using Rotation = flecs::components::transform::Rotation3;
-
 float randf(int n) {
     return static_cast<float>(rand() % n);
 }
@@ -69,15 +62,13 @@ int main(int argc, char *argv[]) {
 
         // count ++;
 
-        for (int i = 1; i >= 0; i --) {
+        for (int i = 2; i >= 0; i --) {
             // if ((rand() % 3)) {
             //     continue;
             // }
 
             flecs::entity car = world.entity().child_of<traffic::car_root>()
                 .set(traffic::Car{})
-                .set(Position{})
-                .set(Rotation{})
                 .set(Box{3, 1, 1})
                 .set(Emissive{0.8})
                 .set(Color{1, 0, 1});
