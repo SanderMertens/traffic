@@ -28,23 +28,6 @@ int main(int argc, char *argv[]) {
     world.script().filename("etc/assets/app.flecs").run();
     world.script().filename("etc/assets/main.flecs").run();
 
-    // Add geometry/color to lanes
-    world.defer([&]{
-        world.each([](flecs::entity e, traffic::Road& road) {
-            if (!e.parent()) {
-                e.set(Box{ road.length, 0.6, road.lane_width * 2 });
-                e.set(Color{ 0.3, 0.3, 0.3 });
-            }
-        });
-
-        world.each([](flecs::entity e, traffic::Intersection& i) {
-            if (!e.parent()) {
-                e.set(Box{ i.lane_width * 2, 0.6, i.lane_width * 2 });
-                e.set(Color{ 0.3, 0.3, 0.3 });
-            }
-        });
-    });
-
     // Populate lanes with cars
     int32_t count = 0;
     world.each([&](flecs::entity lane, traffic::Lane&) {
@@ -62,7 +45,7 @@ int main(int argc, char *argv[]) {
 
         // count ++;
 
-        for (int i = 2; i >= 0; i --) {
+        for (int i = 0; i >= 0; i --) {
             // if ((rand() % 3)) {
             //     continue;
             // }
@@ -70,13 +53,14 @@ int main(int argc, char *argv[]) {
             flecs::entity car = world.entity().child_of<traffic::car_root>()
                 .set(traffic::Car{})
                 .set(Box{3, 1, 1})
-                .set(Emissive{0.8})
+                .set(Emissive{1.0})
                 .set(Color{1, 0, 1});
             traffic::addCarToLane(flecs::entity::null(), lane, car, i * 8 + randf(5));
         }
     });
 
     world.set_target_fps(60);
+    // world.set_threads(8);
 
     return world.app()
         .enable_rest()

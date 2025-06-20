@@ -28,6 +28,30 @@ void FlecsComponentsTransformImport(
     ECS_COMPONENT_DEFINE(world, EcsProject2);
     ECS_COMPONENT_DEFINE(world, EcsProject3);
 
+    ecs_set_hooks(world, EcsPosition2, {
+        .ctor = flecs_default_ctor
+    });
+
+    ecs_set_hooks(world, EcsPosition3, {
+        .ctor = flecs_default_ctor
+    });
+
+    ecs_set_hooks(world, EcsScale2, {
+        .ctor = flecs_default_ctor
+    });
+
+    ecs_set_hooks(world, EcsScale3, {
+        .ctor = flecs_default_ctor
+    });
+
+    ecs_set_hooks(world, EcsRotation2, {
+        .ctor = flecs_default_ctor
+    });
+
+    ecs_set_hooks(world, EcsRotation3, {
+        .ctor = flecs_default_ctor
+    });
+
     ecs_set_hooks(world, EcsTransform2, {
         .ctor = flecs_default_ctor
     });

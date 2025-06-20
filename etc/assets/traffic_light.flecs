@@ -1,0 +1,47 @@
+using flecs.components.*
+
+template TrafficLight {
+  prop state = i8: 0
+  
+  const scale: 4.0
+  const light_size: 0.12 * scale
+
+  Position3: {y += 0}
+  Box: {scale * 0.25, scale * 0.6, scale * 0.05}
+  Rgb: {0.04, 0.04, 0.04}
+
+  {
+    Position3: {y: scale * 0.2, scale * 0.05}
+    Box: {light_size, light_size, light_size / 4}
+    Rgb: match state {
+      2: {1, 0, 0}
+      _: {0.1, 0, 0}
+    }
+    Emissive: match state {
+      2: {2.5}
+      _: {0}
+    }
+  } {
+    Position3: {y: 0.0, scale * 0.05}
+    Box: {light_size, light_size, light_size / 4}
+    Rgb: match state {
+      1: {1, 0.5, 0}
+      _: {0.1, 0.05, 0}
+    }
+    Emissive: match state {
+      1: {2.5}
+      _: {0}
+    }
+  } {
+    Position3: {y: scale * -0.2, scale * 0.05}
+    Box: {light_size, light_size, light_size / 4}
+    Rgb: match state {
+      0: {0, 1, 0}
+      _: {0.0, 0.1, 0}
+    }
+    Emissive: match state {
+      0: {2.5}
+      _: {0}
+    }
+  }
+}

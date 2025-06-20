@@ -5447,7 +5447,6 @@ void* flecs_defer_set(
         cmd = flecs_cmd_new(stage);
     }
 
-    
     if (!existing) {
         /* If component didn't exist yet, insert command that will create it */
         cmd->kind = cmd_kind;
@@ -16045,6 +16044,9 @@ ecs_observer_t* flecs_observer_init(
 
     if (desc->events[0] != EcsMonitor) {
         if (flecs_query_finalize_simple(world, &dummy_query, &query_desc)) {
+            /* Flag is set if query increased the keep_alive count of the 
+             * queried for component, which prevents deleting the component
+             * while queries are still alive. */
             bool trivial_observer = (dummy_query.term_count == 1) && 
                 (dummy_query.flags & EcsQueryIsTrivial) &&
                 (dummy_query.flags & EcsQueryMatchOnlySelf) &&
@@ -16052,6 +16054,26 @@ ecs_observer_t* flecs_observer_init(
             if (trivial_observer) {
                 dummy_query.flags |= desc->query.flags;
                 query = &dummy_query;
+                if (terms[0].flags_ & EcsTermKeepAlive) {
+                    impl->flags |= EcsObserverKeepAlive;
+                }
+            } else {
+                /* We're going to create an actual query, so undo the keep_alive
+                 * increment of the dummy_query. */
+                int32_t i, count = dummy_query.term_count;
+                for (i = 0; i < count; i ++) {
+                    ecs_term_t *term = &terms[i];
+                    if (term->flags_ & EcsTermKeepAlive) {
+                        ecs_component_record_t *cr = flecs_components_get(
+                            world, term->id);
+
+                        /* If keep_alive was set, component record must exist */
+                        ecs_assert(cr != NULL, ECS_INTERNAL_ERROR, NULL);
+                        cr->keep_alive --;
+                        ecs_assert(cr->keep_alive >= 0, 
+                            ECS_INTERNAL_ERROR, NULL);
+                    }
+                }
             }
         }
     }
@@ -16330,7 +16352,22 @@ void flecs_observer_fini(
     /* Cleanup queries */
     if (o->query) {
         ecs_query_fini(o->query);
+    } else if (impl->flags & EcsObserverKeepAlive) {
+        /* Observer is keeping a refcount on the observed component. */
+        ecs_component_record_t *cr = flecs_components_get(
+            world, impl->register_id);
+        
+        /* Component record should still exist since we had a refcount, except
+         * during the final stages of world fini where refcounts are no longer 
+         * checked. */
+        if (cr) {
+            cr->keep_alive --;
+            ecs_assert(cr->keep_alive >= 0, ECS_INTERNAL_ERROR, NULL);
+        } else {
+            ecs_assert(world->flags & EcsWorldQuit, ECS_INTERNAL_ERROR, NULL);
+        }
     }
+
     if (impl->not_query) {
         ecs_query_fini(impl->not_query);
     }
@@ -27931,15 +27968,17 @@ void flecs_pipeline_stats_to_json(
     ecs_strbuf_list_push(&reply->body, "[", ",");
 
     ecs_pipeline_op_t *ops = ecs_vec_first_t(&p->state->ops, ecs_pipeline_op_t);
-    ecs_entity_t *systems = ecs_vec_first_t(&p->state->systems, ecs_entity_t);
+    ecs_system_t **systems = ecs_vec_first_t(&p->state->systems, ecs_system_t*);
     ecs_sync_stats_t *syncs = ecs_vec_first_t(
         &pstats->sync_points, ecs_sync_stats_t);
 
     int32_t s, o, op_count = ecs_vec_count(&p->state->ops);
+
     for (o = 0; o < op_count; o ++) {
         ecs_pipeline_op_t *op = &ops[o];
         for (s = op->offset; s < (op->offset + op->count); s ++) {
-            ecs_entity_t system = systems[s];
+            ecs_system_t *system_data = systems[s];
+            ecs_entity_t system = system_data->query->entity;
 
             if (!ecs_is_alive(world, system)) {
                 continue;
@@ -28688,14 +28727,6 @@ ecs_entity_t flecs_run_system(
 #ifdef FLECS_TIMER
 
 static
-void AddTickSource(ecs_iter_t *it) {
-    int32_t i;
-    for (i = 0; i < it->count; i ++) {
-        ecs_set(it->world, it->entities[i], EcsTickSource, {0});
-    }
-}
-
-static
 void ProgressTimers(ecs_iter_t *it) {
     EcsTimer *timer = ecs_field(it, EcsTimer, 0);
     EcsTickSource *tick_source = ecs_field(it, EcsTickSource, 1);
@@ -28990,16 +29021,8 @@ void FlecsTimerImport(
         .ctor = flecs_default_ctor
     });
 
-    /* Add EcsTickSource to timers and rate filters */
-    ecs_system(world, {
-        .entity = ecs_entity(world, {.name = "AddTickSource", .add = ecs_ids( ecs_dependson(EcsPreFrame) )}),
-        .query.terms = {
-            { .id = ecs_id(EcsTimer), .oper = EcsOr },
-            { .id = ecs_id(EcsRateFilter), .oper = EcsAnd },
-            { .id = ecs_id(EcsTickSource), .oper = EcsNot, .inout = EcsOut}
-        },
-        .callback = AddTickSource
-    });
+    ecs_add_pair(world, ecs_id(EcsTimer), EcsWith, ecs_id(EcsTickSource));
+    ecs_add_pair(world, ecs_id(EcsRateFilter), EcsWith, ecs_id(EcsTickSource));
 
     /* Timer handling */
     ecs_system(world, {
@@ -34379,10 +34402,6 @@ ecs_query_count_t ecs_query_count(
     flecs_poly_assert(q, ecs_query_t);
     ecs_query_count_t result = {0};
 
-    if (!(q->flags & EcsQueryMatchThis)) {
-        return result;
-    }
-
     ecs_iter_t it = flecs_query_iter(q->world, q);
     it.flags |= EcsIterNoData;
 
@@ -34390,6 +34409,17 @@ ecs_query_count_t ecs_query_count(
         result.results ++;
         result.entities += it.count;
         ecs_iter_skip(&it);
+    }
+
+    if ((q->flags & EcsQueryMatchOnlySelf) && 
+       !(q->flags & EcsQueryMatchWildcards)) 
+    {
+        result.tables = result.results;
+    } else if (q->flags & EcsQueryIsCacheable) {
+        ecs_query_impl_t *impl = flecs_query_impl(q);
+        if (impl->cache) {
+            result.tables = ecs_map_count(&impl->cache->tables);
+        }
     }
 
     return result;
@@ -51388,7 +51418,9 @@ int ecs_meta_next(
     scope->op_cur += op->op_count;
 
     if (scope->op_cur >= scope->op_count) {
-        ecs_err("out of bounds");
+        char *str = ecs_get_path(cursor->world, scope->type);
+        ecs_err("too many elements for scope for type %s", str);
+        ecs_os_free(str);
         return -1;
     }
 
@@ -69830,6 +69862,10 @@ void FlecsSystemImport(
 
     flecs_bootstrap_tag(world, EcsSystem);
     flecs_bootstrap_component(world, EcsTickSource);
+
+    ecs_set_hooks(world, EcsTickSource, {
+        .ctor = flecs_default_ctor
+    });
 
     /* Make sure to never inherit system component. This makes sure that any
      * term created for the System component will default to 'self' traversal,

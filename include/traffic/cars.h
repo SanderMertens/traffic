@@ -6,7 +6,11 @@ namespace traffic {
 struct car_root {};
 struct road_root {};
 
-constexpr int TrafficLightUpdateRate = 30;
+// How long traffic light stays green/orange. This is in lane ticks, which is
+// how often a lane is progressed (each 8 frames).
+constexpr uint8_t TrafficLightGreenTicks = 32;
+constexpr uint8_t TrafficLightOrangeTicks = 8;
+
 constexpr int MaxCarsPerLane = 8;
 constexpr float AccelerationForce = 1.5;
 constexpr float BreakForce = 5;
@@ -44,6 +48,10 @@ struct Light {
     float red_pct = 0.75;
 };
 
+struct TrafficLight {
+    int8_t state;
+};
+
 struct Car {
     enum class State {
         Unknown,
@@ -60,7 +68,10 @@ struct Car {
         ReserveIntersection,
         WaitForIntersection,
         MoveOnIntersection,
-        OnIntersection
+        OnIntersection,
+        WaitForProtectedIntersection,
+        MoveOnProtectedIntersection,
+        OnProtectedIntersection,
     };
 
     float position;
@@ -105,7 +116,8 @@ struct LaneCarEntities {
 
 struct Lane {
     Lane(float length_ = 0, float width_ = 0, float max_speed_ = 0, 
-        flecs::entity_t next_ = 0, flecs::entity_t road_ = 0) 
+        flecs::entity_t next_ = 0, flecs::entity_t road_ = 0, 
+        flecs::entity_t light_ = 0) 
     {
         length = length_;
         width = width_;
@@ -119,6 +131,26 @@ struct Lane {
     float max_speed;
     flecs::entity_t next;
     flecs::entity_t road;
+};
+
+struct LaneTrafficLight {
+    enum class State {
+        Default,   // No need to reserve intersection, light is red
+        Reserved,  // Reserved intersection, light is red
+        Acquired,  // Acquired intersection, light is green
+        Releasing  // Releasing intersection, light is orange
+    };
+
+    LaneTrafficLight() {
+        state = State::Default;
+        reservation = 0;
+        light = 0;
+    }
+
+    State state;
+    uint8_t reservation;
+    uint8_t timer;
+    flecs::entity_t light;
 };
 
 struct Corner {
@@ -210,7 +242,8 @@ struct IntersectionRoads {
     }
 
     void release(uint8_t reservation) {
-        assert(reservation == current_reservation);
+        ecs_assert(reservation == current_reservation, 
+            ECS_INVALID_OPERATION, nullptr);
         current_reservation ++;
     }
 };

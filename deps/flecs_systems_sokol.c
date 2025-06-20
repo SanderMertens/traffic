@@ -33228,6 +33228,9 @@ void SokolInitRenderer(ecs_iter_t *it) {
     sokol_init_geometry(world, &resources);
     ecs_trace("sokol: static geometry resources initialized");
 
+    /* Run once */
+    ecs_enable(it->world, it->system, false);
+
     ecs_log_pop();
 }
 
